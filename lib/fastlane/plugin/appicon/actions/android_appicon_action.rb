@@ -25,6 +25,10 @@ module Fastlane
       def self.run(params)
         fname = params[:appicon_image_file]
         custom_sizes = params[:appicon_custom_sizes]
+        icon_types = params[:appicon_icon_types]
+        appicon_rounded = params[:appicon_rounded]
+        appicon_filename = params[:appicon_filename]
+        appicon_path = params[:appicon_path]
 
         require 'mini_magick'
         image = MiniMagick::Image.open(fname)
@@ -34,7 +38,7 @@ module Fastlane
         # Convert image to png
         image.format 'png'
 
-        icons = Helper::AppiconHelper.get_needed_icons(params[:appicon_icon_types], self.needed_icons, true, custom_sizes)
+        icons = Helper::AppiconHelper.get_needed_icons(icon_types, self.needed_icons, true, custom_sizes)
         icons.each do |icon|
           width = icon['width']
           height = icon['height']
@@ -44,20 +48,55 @@ module Fastlane
             basepath = Pathname.new(icon['basepath'])
             filename = icon['filename']
           else
-            basepath = Pathname.new("#{params[:appicon_path]}-#{icon['scale']}")
-            filename = "#{params[:appicon_filename]}.png"
+            basepath = Pathname.new("#{appicon_path}-#{icon['scale']}")
+            filename = "#{appicon_filename}.png"
           end
+
           FileUtils.mkdir_p(basepath)
 
           image.resize "#{width}x#{height}"
           image.write basepath + filename
+
+          if appicon_rounded
+            rounded_image = MiniMagick::Image.open(fname)
+            rounded_image.format 'png'
+            rounded_image.resize "#{width}x#{height}"
+            rounded_image = round(rounded_image)
+            rounded_image.write basepath + filename.gsub('.png', '_round.png')
+          end
+
         end
 
-        UI.success("Successfully stored launcher icons at '#{params[:appicon_path]}'")
+        UI.success("Successfully stored launcher icons at '#{appicon_path}'")
       end
 
       def self.get_custom_sizes(image, custom_sizes)
 
+      end
+
+      def self.round(img)
+        require 'mini_magick'
+        img.format 'png'
+
+        width = img[:width]-2
+        radius = width/2
+
+        mask = ::MiniMagick::Image.open img.path
+        mask.format 'png'
+
+        mask.combine_options do |m|
+          m.alpha 'transparent'
+          m.background 'none'
+          m.fill 'white'
+          m.draw 'roundrectangle 1,1,%s,%s,%s,%s' % [width, width, radius, radius]
+        end
+
+        masked = img.composite(mask, 'png') do |i|
+          i.alpha "set"
+          i.compose 'DstIn'
+        end
+
+        return masked
       end
 
       def self.description
@@ -93,6 +132,12 @@ module Fastlane
                                description: "The output filename of each image",
                                   optional: true,
                                       type: String),
+          FastlaneCore::ConfigItem.new(key: :appicon_rounded,
+                                  env_name: "APPICON_ROUNDED",
+                             default_value: false,
+                               description: "Generate rounded image",
+                                  optional: true,
+                                is_string: false),
           FastlaneCore::ConfigItem.new(key: :appicon_custom_sizes,
                                description: "Hash of custom sizes - {'path/icon.png' => '256x256'}",
                              default_value: {},
